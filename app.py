@@ -25,8 +25,16 @@ ollama_process = None
 # ==========================================
 
 def start_ollama():
-    """Launches Ollama service in the background at application boot."""
+    """Launches Ollama service in background and locks Termux CPU state active."""
     global ollama_process
+    
+    print("🔒 Requesting Android Wake-Lock handles to prevent deep sleep states...")
+    try:
+        subprocess.run(["termux-wake-lock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("✅ Termux Wake-Lock established. Background socket loops secured.")
+    except Exception:
+        print("⚠️ Failed to acquire system Wake-Lock interface.")
+
     print("🤖 Initializing local Ollama inference engine background daemon...")
     try:
         ollama_process = subprocess.Popen(
@@ -35,11 +43,9 @@ def start_ollama():
             stderr=subprocess.DEVNULL
         )
         
-        # Verify socket availability by polling tags endpoint (max 5 retries)
         retries = 5
         while retries > 0:
             try:
-                # Use your existing config profile URL to keep endpoints unified
                 response = requests.get(f"{config.OLLAMA_URL.split('/api')[0]}/api/tags", timeout=1)
                 if response.status_code == 200:
                     print("✅ Ollama backend listener is active and attached.")
@@ -54,22 +60,30 @@ def start_ollama():
         sys.exit(1)
 
 def cleanup_and_exit(signum, frame):
-    """Gracefully terminates background subprocesses when Ctrl+C or shutdown occurs."""
+    """Gracefully terminates background dependencies and releases wake-locks."""
     global ollama_process
     print("\n🛑 Teardown sequence triggered! Cleaning up active sockets...")
     
+    try:
+        print("🔓 Releasing Termux system Wake-Lock profile restraints...")
+        subprocess.run(["termux-wake-unlock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("✅ Wake-Lock released successfully.")
+    except Exception:
+        pass
+
     if ollama_process:
         print("🔌 Terminating local background Ollama daemon...")
-        ollama_process.terminate()  # Sends POSIX SIGTERM
+        ollama_process.terminate()  
         try:
             ollama_process.wait(timeout=3)
             print("💀 Ollama stopped successfully.")
         except subprocess.TimeoutExpired:
-            ollama_process.kill()  # Force close if hung
+            ollama_process.kill()  
             print("⚡ Ollama forced closed.")
             
     print("👋 Jarvis OS Light framework offline. Exiting terminal shell safely.")
     sys.exit(0)
+
 
 # Register POSIX signal handlers to capture environment termination events
 signal.signal(signal.SIGINT, cleanup_and_exit)   # Catches manual Ctrl + C

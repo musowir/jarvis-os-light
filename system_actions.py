@@ -65,11 +65,28 @@ def execute_system_activity(prompt):
                 pass
             return True, "Unable to pull live network connection metrics right now."
 
-        # Active toggles upgraded with secure runners
+        # Active toggles upgraded with immediate state verification hooks
         if any(w in p for w in ["on", "enable", "activate"]):
-            return run_secure_command(["termux-wifi-enable", "true"], "Wireless networking enabled.", "Wi-Fi Activation")
+            success = run_secure_command(["termux-wifi-enable", "true"], "", "Wi-Fi Activation")
+            if success[0]:
+                time.sleep(1.5) # Give hardware radio a brief window to spin up
+                # Verify state sync
+                check = subprocess.run(["termux-wifi-enable"], capture_output=True, text=True)
+                if "true" in check.stdout.lower():
+                    return True, "Wireless networking verified active via state synchronization loop."
+                return True, "Wi-Fi command sent, but state synchronization verification timed out."
+            return success
+
         if any(w in p for w in ["off", "disable", "deactivate"]):
-            return run_secure_command(["termux-wifi-enable", "false"], "Wireless networking disabled successfully.", "Wi-Fi Deactivation")
+            success = run_secure_command(["termux-wifi-enable", "false"], "", "Wi-Fi Deactivation")
+            if success[0]:
+                time.sleep(1.5)
+                # Verify state sync
+                check = subprocess.run(["termux-wifi-enable"], capture_output=True, text=True)
+                if "false" in check.stdout.lower():
+                    return True, "Wireless networking safely disabled and verified offline."
+                return True, "Wi-Fi disable command sent, but state verification reflects a hanging state."
+            return success
 
     # ==========================================
     # 4. LOCATION SERVICES / GPS
