@@ -20,14 +20,28 @@
         .delete-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
         .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(3, 4, 7, 0.6); display: none; z-index: 999; backdrop-filter: blur(2px); }
         .overlay.active { display: block; }
+        
+        /* Modals and Overlays Configuration */
         .modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.95); background: #0b0f17; border: 1px solid #1e2538; border-radius: 8px; padding: 20px; width: 85%; max-width: 320px; z-index: 2000; display: none; opacity: 0; transition: all 0.2s ease; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.7); }
         .modal.active { display: block; opacity: 1; transform: translate(-50%, -50%) scale(1); }
-        .modal h4 { margin: 0 0 10px 0; color: #f8fafc; font-size: 15px; font-weight: 600; }
+        .modal h4, .modal h3 { margin: 0 0 10px 0; color: #f8fafc; font-size: 15px; font-weight: 600; }
         .modal p { margin: 0 0 20px 0; color: #94a3b8; font-size: 13.5px; line-height: 1.4; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
         .modal-btn { padding: 8px 14px; border-radius: 4px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; outline: none; }
         .modal-btn.cancel { background: #111521; color: #94a3b8; border: 1px solid #1e2538; }
         .modal-btn.confirm { background: #ef4444; color: #ffffff; }
+        
+        /* Core Auth Container Overlay Styling */
+        .auth-overlay { position: fixed; inset: 0; background: rgba(5, 7, 11, 0.9); backdrop-filter: blur(8px); z-index: 3000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+        .auth-overlay.active { opacity: 1; pointer-events: auto; }
+        .auth-card { background: #0b0f17; border: 1px solid #1e2538; border-radius: 8px; padding: 24px; width: 85%; max-width: 340px; box-shadow: 0 20px 40px -15px rgba(0,0,0,0.8); }
+        .auth-field { width: 100%; background: #05070b; border: 1px solid #141822; padding: 12px; border-radius: 6px; color: #f8fafc; font-size: 14px; outline: none; box-sizing: border-box; margin-bottom: 12px; transition: border-color 0.2s; }
+        .auth-field:focus { border-color: #272e3f; }
+        .auth-submit { width: 100%; padding: 12px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: #f8fafc; color: #05070b; margin-top: 8px; margin-bottom: 14px; transition: opacity 0.2s; }
+        .auth-submit:hover { opacity: 0.9; }
+        .auth-error { color: #ef4444; font-size: 12.5px; margin-bottom: 12px; line-height: 1.4; display: none; text-align: center; }
+
+        /* Main Conversational Container Layouts */
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 16px; box-sizing: border-box; width: 100%; }
         .header-bar { display: flex; align-items: center; position: relative; margin-bottom: 12px; height: 48px; width: 100%; border-bottom: 1px solid #0f131f; }
         .menu-btn { background: transparent; border: none; color: #94a3b8; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; position: absolute; left: 0px; top: 8px; z-index: 998; outline: none; padding: 0; }
@@ -48,6 +62,32 @@
     </style>
 </head>
 <body>
+    <!-- Secure Multi-Tenant Guard Overlay Box -->
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-card">
+            <h3 id="authTitle" style="font-family: monospace; letter-spacing: 1px;">SYSTEM_ACCESS</h3>
+            <p id="authSubtitle" style="color: #64748b; font-size: 13px; margin-top: -4px; margin-bottom: 20px;">Provide security keys to sync matrix profile.</p>
+            
+            <div id="authErrorMsg" class="auth-error"></div>
+            
+            <!-- Registration Domain Injector -->
+            <div id="regFieldsContainer" style="display: none;">
+                <input type="text" id="authName" class="auth-field" placeholder="Full Identity Name">
+                <input type="email" id="authEmail" class="auth-field" placeholder="Security Routing Email">
+            </div>
+            
+            <input type="text" id="authUsername" class="auth-field" placeholder="Username">
+            <input type="password" id="authPassword" class="auth-field" placeholder="Security Access Password">
+            
+            <button class="auth-submit" id="authSubmitBtn" onclick="processAuthSubmission()">Synchronize</button>
+            
+            <div style="text-align: center; font-size: 13px; color: #94a3b8;">
+                <span id="authToggleMsg">New user instance?</span>
+                <span id="authToggleLink" style="color: #f8fafc; cursor: pointer; text-decoration: underline; margin-left: 4px;" onclick="toggleAuthContext()">Register Account</span>
+            </div>
+        </div>
+    </div>
+
     <button class="menu-btn" id="hamburgerBtn" onclick="toggleSidebar()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
     </button>
@@ -98,15 +138,113 @@
         const modalPromptText = document.getElementById('modalPromptText');
         const modalConfirmBtn = document.getElementById('modalConfirmBtn');
         
+        // Auth UI Selectors
+        const authOverlay = document.getElementById('authOverlay');
+        const regFieldsContainer = document.getElementById('regFieldsContainer');
+        const authTitle = document.getElementById('authTitle');
+        const authSubtitle = document.getElementById('authSubtitle');
+        const authSubmitBtn = document.getElementById('authSubmitBtn');
+        const authToggleMsg = document.getElementById('authToggleMsg');
+        const authToggleLink = document.getElementById('authToggleLink');
+        const authErrorMsg = document.getElementById('authErrorMsg');
+
         let currentSessionId = null;
         let pendingDeleteId = null;
+        let isLoginState = true;
 
-        // Requirement Fix 2 & 3: First preference is a fresh chat on load, do not populate database automatically
         window.onload = function() { 
             currentSessionId = null;
             chatBox.innerHTML = '';
-            loadSessions(true); // Flag true tells it to pull history into sidebar but NOT load it into main view
+            loadSessions(true); 
         };
+
+        // ==========================================
+        // 🔐 FRONTEND SECURITY HANDLERS
+        // ==========================================
+
+        function toggleAuthContext() {
+            isLoginState = !isLoginState;
+            authErrorMsg.style.display = 'none';
+            
+            if(isLoginState) {
+                authTitle.innerText = "SYSTEM_ACCESS";
+                authSubtitle.innerText = "Provide security keys to sync matrix profile.";
+                regFieldsContainer.style.display = "none";
+                authSubmitBtn.innerText = "Synchronize";
+                authToggleMsg.innerText = "New user instance?";
+                authToggleLink.innerText = "Register Account";
+            } else {
+                authTitle.innerText = "REGISTER_INSTANCE";
+                authSubtitle.innerText = "Provision global credentials across internal database fields.";
+                regFieldsContainer.style.display = "block";
+                authSubmitBtn.innerText = "Initialize Core";
+                authToggleMsg.innerText = "Active entity key?";
+                authToggleLink.innerText = "Access Framework";
+            }
+        }
+
+        function processAuthSubmission() {
+            authErrorMsg.style.display = 'none';
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            
+            if(!username || !password) {
+                renderAuthError("Identity parameters cannot hold unassigned records.");
+                return;
+            }
+
+            let targetUrl = '/login';
+            let payload = { username, password };
+
+            if(!isLoginState) {
+                const name = document.getElementById('authName').value.trim();
+                const email = document.getElementById('authEmail').value.trim();
+                if(!name || !email) {
+                    renderAuthError("Demographic metadata blocks are required.");
+                    return;
+                }
+                targetUrl = '/register';
+                payload = { username, password, name, email };
+            }
+
+            fetch(targetUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(async res => {
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error || "Authentication structural validation failure.");
+                return data;
+            })
+            .then(data => {
+                if(isLoginState) {
+                    authOverlay.classList.remove('active');
+                    loadSessions();
+                } else {
+                    alert("Account instance mapped safely. Processing entry handshakes.");
+                    toggleAuthContext();
+                }
+            })
+            .catch(err => renderAuthError(err.message));
+        }
+
+        function renderAuthError(msg) {
+            authErrorMsg.innerText = `[ERROR]: ${msg}`;
+            authErrorMsg.style.display = 'block';
+        }
+
+        function interceptUnauthorized(status) {
+            if (status === 401) {
+                authOverlay.classList.add('active');
+                return true;
+            }
+            return false;
+        }
+
+        // ==========================================
+        // 💬 LAYOUT & APP SCRIPT RUNTIMES
+        // ==========================================
 
         function toggleSidebar() {
             const isOpen = sidebarMenu.classList.toggle('open');
@@ -117,11 +255,14 @@
 
         function loadSessions(isInitialLoad = false) {
             fetch('/sessions')
-                .then(res => res.json())
+                .then(res => {
+                    if(interceptUnauthorized(res.status)) return;
+                    return res.json();
+                })
                 .then(data => {
+                    if(!data) return;
                     sessionList.innerHTML = '';
-                    // Do not call createNewChat() here anymore to prevent spawning empty histories
-                    data.forEach((session, index) => {
+                    data.forEach((session) => {
                         const div = document.createElement('div');
                         div.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
                         
@@ -139,13 +280,6 @@
                         div.appendChild(deleteBtn);
                         sessionList.appendChild(div);
                     });
-                    
-                    // Highlight active element selection if any history is explicitly loaded
-                    if (currentSessionId !== null) {
-                        document.querySelectorAll('.session-item').forEach(el => {
-                            // Quick check validation logic to toggle highlights 
-                        });
-                    }
                 });
         }
 
@@ -161,10 +295,13 @@
         function executeDeletion() {
             if (!pendingDeleteId) return;
             fetch(`/sessions/delete?session_id=${pendingDeleteId}`, { method: 'DELETE' })
-                .then(res => res.json())
+                .then(res => {
+                    if(interceptUnauthorized(res.status)) return;
+                    return res.json();
+                })
                 .then(data => {
+                    if (!data) return;
                     if (data.status === "success") {
-                        // Requirement Fix 1: If current open chat is deleted, reset layout instantly to clean mode
                         if (currentSessionId === pendingDeleteId) { 
                             currentSessionId = null; 
                             chatBox.innerHTML = '';
@@ -176,7 +313,6 @@
         }
 
         function createNewChat() {
-            // Instantly shifts view layer into temporary pending state without hitting the DB
             currentSessionId = null;
             chatBox.innerHTML = '';
             loadSessions();
@@ -187,10 +323,14 @@
             currentSessionId = sessionId;
             chatBox.innerHTML = '';
             fetch(`/history?session_id=${sessionId}`)
-                .then(res => res.json())
+                .then(res => {
+                    if(interceptUnauthorized(res.status)) return;
+                    return res.json();
+                })
                 .then(messages => {
+                    if(!messages) return;
                     messages.forEach(msg => { if (msg.role !== 'system') { appendMessage(msg.role, msg.content); } });
-                    loadSessions(); // Re-index to lock active highlight state onto sidebar list row
+                    loadSessions(); 
                 });
         }
 
@@ -210,13 +350,10 @@
             userInput.value = '';
             appendMessage('user', text);
             const assistantDiv = appendMessage('assistant', '');
-
-            // Use string value to allow backend to detect an unallocated state
             const targetSession = currentSessionId ? currentSessionId : 'null';
 
             const eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(text)}&session_id=${targetSession}`);
             
-            // Listen for custom event stream header block updates to receive backend assigned session IDs
             eventSource.onmessage = function(event) {
                 if (event.data === "[DONE]") {
                     eventSource.close();
@@ -227,23 +364,19 @@
                 }
             };
 
-            // Capture implicit custom ID assignments streaming from backend
-            eventSource.addEventListener('message', function(e) {
-                // Keep default onmessage parsing clear
-            });
-
-            // Read custom event engine transmission values via server event lines
-            // We use standard event tracking to grab session assignments on the fly
             const idListener = function(event) {
-                // If stream returns an assigned session context, snap it onto our global handler
                 if(event.lastEventId) {
                     currentSessionId = parseInt(event.lastEventId);
                 }
             };
             
-            // Native SSE assigns 'id' fields directly to event.lastEventId automatically
             eventSource.addEventListener('message', idListener);
-            eventSource.onerror = function() { eventSource.close(); };
+            eventSource.onerror = function(err) { 
+                // EventSource standard API does not transmit response headers directly to error events.
+                // We drop connections and force a safe re-fetch sequence to evaluate authorization variables cleanly.
+                eventSource.close(); 
+                fetch('/sessions').then(res => interceptUnauthorized(res.status));
+            };
         }
     </script>
 </body>
