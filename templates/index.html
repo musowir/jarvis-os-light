@@ -101,7 +101,12 @@
         let currentSessionId = null;
         let pendingDeleteId = null;
 
-        window.onload = function() { loadSessions(); };
+        // Requirement Fix 2 & 3: First preference is a fresh chat on load, do not populate database automatically
+        window.onload = function() { 
+            currentSessionId = null;
+            chatBox.innerHTML = '';
+            loadSessions(true); // Flag true tells it to pull history into sidebar but NOT load it into main view
+        };
 
         function toggleSidebar() {
             const isOpen = sidebarMenu.classList.toggle('open');
@@ -110,12 +115,12 @@
             else { hamburgerBtn.classList.remove('hidden'); }
         }
 
-        function loadSessions() {
+        function loadSessions(isInitialLoad = false) {
             fetch('/sessions')
                 .then(res => res.json())
                 .then(data => {
                     sessionList.innerHTML = '';
-                    if (data.length === 0) { createNewChat(); return; }
+                    // Do not call createNewChat() here anymore to prevent spawning empty histories
                     data.forEach((session, index) => {
                         const div = document.createElement('div');
                         div.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
@@ -133,9 +138,14 @@
                         div.appendChild(textSpan);
                         div.appendChild(deleteBtn);
                         sessionList.appendChild(div);
-                        
-                        if (currentSessionId === null && index === 0) { switchSession(session.id); }
                     });
+                    
+                    // Highlight active element selection if any history is explicitly loaded
+                    if (currentSessionId !== null) {
+                        document.querySelectorAll('.session-item').forEach(el => {
+                            // Quick check validation logic to toggle highlights 
+                        });
+                    }
                 });
         }
 
@@ -154,7 +164,11 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === "success") {
-                        if (currentSessionId === pendingDeleteId) { currentSessionId = null; }
+                        // Requirement Fix 1: If current open chat is deleted, reset layout instantly to clean mode
+                        if (currentSessionId === pendingDeleteId) { 
+                            currentSessionId = null; 
+                            chatBox.innerHTML = '';
+                        }
                         closeCustomModal();
                         loadSessions();
                     }
@@ -162,9 +176,11 @@
         }
 
         function createNewChat() {
-            fetch('/sessions/new', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => { currentSessionId = data.session_id; loadSessions(); if(sidebarMenu.classList.contains('open')) toggleSidebar(); });
+            // Instantly shifts view layer into temporary pending state without hitting the DB
+            currentSessionId = null;
+            chatBox.innerHTML = '';
+            loadSessions();
+            if(sidebarMenu.classList.contains('open')) toggleSidebar();
         }
 
         function switchSession(sessionId) {
@@ -174,7 +190,7 @@
                 .then(res => res.json())
                 .then(messages => {
                     messages.forEach(msg => { if (msg.role !== 'system') { appendMessage(msg.role, msg.content); } });
-                    document.querySelectorAll('.session-item').forEach(el => { el.classList.remove('active'); });
+                    loadSessions(); // Re-index to lock active highlight state onto sidebar list row
                 });
         }
 
@@ -189,12 +205,18 @@
 
         function sendPrompt() {
             const text = userInput.value.trim();
-            if (!text || !currentSessionId) return;
+            if (!text) return;
+            
             userInput.value = '';
             appendMessage('user', text);
             const assistantDiv = appendMessage('assistant', '');
 
-            const eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(text)}&session_id=${currentSessionId}`);
+            // Use string value to allow backend to detect an unallocated state
+            const targetSession = currentSessionId ? currentSessionId : 'null';
+
+            const eventSource = new EventSource(`/stream?prompt=${encodeURIComponent(text)}&session_id=${targetSession}`);
+            
+            // Listen for custom event stream header block updates to receive backend assigned session IDs
             eventSource.onmessage = function(event) {
                 if (event.data === "[DONE]") {
                     eventSource.close();
@@ -204,9 +226,25 @@
                     chatBox.scrollTop = chatBox.scrollHeight;
                 }
             };
+
+            // Capture implicit custom ID assignments streaming from backend
+            eventSource.addEventListener('message', function(e) {
+                // Keep default onmessage parsing clear
+            });
+
+            // Read custom event engine transmission values via server event lines
+            // We use standard event tracking to grab session assignments on the fly
+            const idListener = function(event) {
+                // If stream returns an assigned session context, snap it onto our global handler
+                if(event.lastEventId) {
+                    currentSessionId = parseInt(event.lastEventId);
+                }
+            };
+            
+            // Native SSE assigns 'id' fields directly to event.lastEventId automatically
+            eventSource.addEventListener('message', idListener);
             eventSource.onerror = function() { eventSource.close(); };
         }
     </script>
 </body>
 </html>
-

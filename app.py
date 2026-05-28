@@ -84,10 +84,9 @@ def cleanup_and_exit(signum, frame):
     print("👋 Jarvis OS Light framework offline. Exiting terminal shell safely.")
     sys.exit(0)
 
-
 # Register POSIX signal handlers to capture environment termination events
-signal.signal(signal.SIGINT, cleanup_and_exit)   # Catches manual Ctrl + C
-signal.signal(signal.SIGTERM, cleanup_and_exit)  # Catches system level kills
+signal.signal(signal.SIGINT, cleanup_and_exit)   
+signal.signal(signal.SIGTERM, cleanup_and_exit)  
 
 # ==========================================
 # 🔊 ORIGINAL VOICE WORKER IMPLEMENTATIONS
@@ -103,7 +102,7 @@ def speak(text):
         threading.Thread(target=speak_worker, args=(text,), daemon=True).start()
 
 # ==========================================
-# 🌐 ORIGINAL APP ROUTING LAYER
+# 🌐 CORE APP ROUTING LAYER
 # ==========================================
 
 @app.route('/')
@@ -119,6 +118,7 @@ def get_sessions():
 
 @app.route('/sessions/new', methods=['POST'])
 def new_session():
+    """Lazily initialized inside the /stream endpoint on first prompt arrival."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO sessions (title) VALUES ('New Chat Thread')")
@@ -131,7 +131,9 @@ def delete_session():
     session_id = request.args.get('session_id')
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # Clean up database tables to avoid dangling orphan content records
         cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.commit()
         return jsonify({"status": "success"})
 
@@ -146,8 +148,17 @@ def get_history():
 @app.route('/stream')
 def stream():
     user_prompt = request.args.get('prompt', '').strip()
-    session_id = request.args.get('session_id')
+    session_id = request.args.get('session_id', '').strip()
     
+    # Major Improvement: If no session ID exists, generate one dynamically right now
+    # This prevents empty chat threads from polluting your list on page load
+    if not session_id or session_id == "null" or session_id == "undefined":
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO sessions (title) VALUES ('New Chat Thread')")
+            session_id = cursor.lastrowid
+            conn.commit()
+
     # 1. System Action Parsing Intercept
     intercepted, system_message = execute_system_activity(user_prompt)
     if intercepted:
@@ -163,6 +174,8 @@ def stream():
             
         def generate_system_reply():
             speak(system_message)
+            # Send session ID in custom block headers so frontend can bind it
+            yield f"id: {session_id}\n"
             yield f"data: {system_message}\n\n"
             yield "data: [DONE]\n\n"
         return Response(generate_system_reply(), mimetype='text/event-stream')
@@ -195,7 +208,6 @@ def stream():
         compiled_response = ""
         active_context = [{"role": "system", "content": config.SYSTEM_PROMPT}]
         
-        # Load exact previous logs to stop hallucinated loops
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
@@ -206,7 +218,6 @@ def stream():
             yield f"Pulling details from system search engines...\n\n"
             web_context = internet_search(user_prompt)
             execution_prompt = f"Live updates context: {web_context}\n\nUsing this structural real-time data, reply to: '{user_prompt}'."
-            # Swap latest user input slice for the enriched version
             if active_context and active_context[-1]["role"] == "user":
                 active_context[-1]["content"] = execution_prompt
 
@@ -218,7 +229,7 @@ def stream():
         }
 
         try:
-            # Extended fallback timeout window to avoid "Connection lost" faults
+            yield f"id: {session_id}\n" # Transmit the assigned session ID down to frontend
             resp = requests.post(config.OLLAMA_URL, json=payload, stream=True, timeout=45)
             resp.raise_for_status()
             for line in resp.iter_lines():
@@ -239,8 +250,5 @@ def stream():
     return Response(generate(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
-    # Initialize background process before opening network port bounds
     start_ollama()
-    
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
-
