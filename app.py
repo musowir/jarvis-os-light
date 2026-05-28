@@ -4,6 +4,9 @@ import random
 import requests
 import threading
 import subprocess
+import signal
+import sys
+import time
 from flask import Flask, Response, request, render_template, jsonify
 
 import config
@@ -14,6 +17,68 @@ from search_engine import INITIAL_SEARCH_KEYWORDS, FOLLOWUP_SEARCH_KEYWORDS, int
 app = Flask(__name__)
 init_db()
 
+# Global variable to track the background Ollama daemon process
+ollama_process = None
+
+# ==========================================
+# 🛠️ DEPENDENCY LIFECYCLE HOOKS
+# ==========================================
+
+def start_ollama():
+    """Launches Ollama service in the background at application boot."""
+    global ollama_process
+    print("🤖 Initializing local Ollama inference engine background daemon...")
+    try:
+        ollama_process = subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # Verify socket availability by polling tags endpoint (max 5 retries)
+        retries = 5
+        while retries > 0:
+            try:
+                # Use your existing config profile URL to keep endpoints unified
+                response = requests.get(f"{config.OLLAMA_URL.split('/api')[0]}/api/tags", timeout=1)
+                if response.status_code == 200:
+                    print("✅ Ollama backend listener is active and attached.")
+                    return
+            except requests.exceptions.ConnectionError:
+                pass
+            time.sleep(1.5)
+            retries -= 1
+        print("⚠️ Ollama took a moment to bind. Port might be occupied or initializing.")
+    except FileNotFoundError:
+        print("❌ Error: 'ollama' binary not found. Please verify your Termux installation.")
+        sys.exit(1)
+
+def cleanup_and_exit(signum, frame):
+    """Gracefully terminates background subprocesses when Ctrl+C or shutdown occurs."""
+    global ollama_process
+    print("\n🛑 Teardown sequence triggered! Cleaning up active sockets...")
+    
+    if ollama_process:
+        print("🔌 Terminating local background Ollama daemon...")
+        ollama_process.terminate()  # Sends POSIX SIGTERM
+        try:
+            ollama_process.wait(timeout=3)
+            print("💀 Ollama stopped successfully.")
+        except subprocess.TimeoutExpired:
+            ollama_process.kill()  # Force close if hung
+            print("⚡ Ollama forced closed.")
+            
+    print("👋 Jarvis OS Light framework offline. Exiting terminal shell safely.")
+    sys.exit(0)
+
+# Register POSIX signal handlers to capture environment termination events
+signal.signal(signal.SIGINT, cleanup_and_exit)   # Catches manual Ctrl + C
+signal.signal(signal.SIGTERM, cleanup_and_exit)  # Catches system level kills
+
+# ==========================================
+# 🔊 ORIGINAL VOICE WORKER IMPLEMENTATIONS
+# ==========================================
+
 def speak_worker(text):
     subprocess.run([
         "termux-tts-speak", "-e", config.TTS_ENGINE, "-l", config.TTS_LOCALE, "-s", "SYSTEM", text
@@ -22,6 +87,10 @@ def speak_worker(text):
 def speak(text):
     if text.strip():
         threading.Thread(target=speak_worker, args=(text,), daemon=True).start()
+
+# ==========================================
+# 🌐 ORIGINAL APP ROUTING LAYER
+# ==========================================
 
 @app.route('/')
 def index():
@@ -156,5 +225,8 @@ def stream():
     return Response(generate(), mimetype='text/event-stream')
 
 if __name__ == '__main__':
+    # Initialize background process before opening network port bounds
+    start_ollama()
+    
     app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
 
