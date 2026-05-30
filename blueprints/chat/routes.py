@@ -76,6 +76,25 @@ def get_history(current_user_id):
     
     return jsonify([dict(row) for row in messages])
 
+@chat_bp.route('/telemetry/logs', methods=['GET'])
+@jwt_required
+def get_telemetry_logs(current_user_id):
+    """Retrieves independent hardware actions formatted to the system's local time."""
+    db = get_db_connection()
+    cursor = db.cursor()
+    
+    # Using datetime(executed_at, 'localtime') to match the phone's system clock
+    logs = cursor.execute("""
+        SELECT h.action_prompt, h.execution_feedback, 
+               datetime(h.executed_at, 'localtime') as executed_at
+        FROM hardware_logs h
+        JOIN sessions s ON h.session_id = s.id
+        WHERE s.user_id = ?
+        ORDER BY h.id DESC LIMIT 50
+    """, (current_user_id,)).fetchall()
+    
+    return jsonify([dict(row) for row in logs])
+
 @chat_bp.route('/sessions/delete', methods=['DELETE'])
 @jwt_required
 def delete_session(current_user_id):
@@ -174,17 +193,15 @@ def stream(current_user_id):
             speak(random.choice(current_app.config['FILLER_PHRASES']))
 
             if handled:
-                cursor_thread.execute(
-                    "INSERT INTO messages (session_id, role, content) VALUES (?, 'user', ?)", 
-                    (allocated_session_id, prompt)
-                )
-                cursor_thread.execute(
-                    "INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)", 
-                    (allocated_session_id, message_feedback)
-                )
+                # Log hardware tracking details completely independent of chat tables
+                cursor_thread.execute("""
+                    INSERT INTO hardware_logs (session_id, action_prompt, execution_feedback) 
+                    VALUES (?, ?, ?)
+                """, (allocated_session_id, prompt, message_feedback))
                 db_thread.commit()
                 
-                yield f"data: {message_feedback}\n\n"
+                # Stream out live interface confirmations to the terminal/UI screen
+                yield f"data: [System Action]: {message_feedback}\n\n"
                 yield "data: [DONE]\n\n"
                 speak(message_feedback)
                 return

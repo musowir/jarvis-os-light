@@ -1,6 +1,5 @@
 # database.py
 import sqlite3
-import os
 from flask import g, current_app
 
 def get_db_connection():
@@ -12,11 +11,10 @@ def get_db_connection():
         db_file = current_app.config.get('DB_FILE', 'jarvis_chat.db') if current_app else "jarvis_chat.db"
         g.db = sqlite3.connect(db_file)
         g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON;")
     return g.db
 
 def close_db(e=None):
-    """Safely tears down the request-locked connection when a route ends execution."""
+    """Closes the current request-bound database connection cleanly."""
     db = g.pop('db', None)
     if db is not None:
         db.close()
@@ -27,55 +25,33 @@ def init_db(app=None):
     
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
-        cursor.execute("PRAGMA foreign_keys = ON;")
         
-        # 1. Users Security Core
+        # 1. Users Security Container Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL UNIQUE,
-                name TEXT NOT NULL,
+                username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        
-        # 2. Flexible Variable Overrides 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS user_settings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                setting_key TEXT NOT NULL,
-                setting_value TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                UNIQUE(user_id, setting_key)
-            )
-        """)
 
-        # 3. User-Scoped Conversational Sessions
+        # 2. Session Context Metadata Index Table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER, 
-                title TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
                 last_search_query TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
-        
-        # Migration Safety Fallback: Ensure user_id column exists for legacy iterations
-        try:
-            cursor.execute("ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;")
-        except sqlite3.OperationalError:
-            pass
 
         # --- PHASE 2 MEMORY INTEGRATION MIGRATION ENGINE ---
         try:
             cursor.execute("ALTER TABLE sessions ADD COLUMN history_summary TEXT DEFAULT '';")
         except sqlite3.OperationalError:
-            # Column already exists, swallow the error safely
             pass
         # --- END PHASE 2 MEMORY INTEGRATION MIGRATION ENGINE ---
 
@@ -83,12 +59,14 @@ def init_db(app=None):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER,
-                role TEXT,
-                content TEXT,
+                session_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             )
         """)
+
         # 5. Session Environmental Parameter Table (Phase 2)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_parameters (
@@ -99,6 +77,18 @@ def init_db(app=None):
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
                 UNIQUE(session_id, param_key)
+            )
+        """)
+
+        # 6. Independent Hardware & System Telemetry Log (Phase 2 Cleanups)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS hardware_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                action_prompt TEXT NOT NULL,
+                execution_feedback TEXT NOT NULL,
+                executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             )
         """)
 
