@@ -8,9 +8,7 @@ def get_db_connection():
     Creates or returns an existing thread-safe database connection 
     attached securely to the current application request context (g).
     """
-    # Use Flask's 'g' object to ensure a thread doesn't share its connection with another request
     if 'db' not in g:
-        # Pull DB file path directly out of our newly configured app engine settings
         db_file = current_app.config.get('DB_FILE', 'jarvis_chat.db') if current_app else "jarvis_chat.db"
         g.db = sqlite3.connect(db_file)
         g.db.row_factory = sqlite3.Row
@@ -25,7 +23,6 @@ def close_db(e=None):
 
 def init_db(app=None):
     """Initializes the multi-tenant schema architecture inside the targeted database file."""
-    # Fallback to direct resolution if executed outside active application loops
     db_file = app.config['DB_FILE'] if app else "jarvis_chat.db"
     
     with sqlite3.connect(db_file) as conn:
@@ -74,6 +71,14 @@ def init_db(app=None):
         except sqlite3.OperationalError:
             pass
 
+        # --- PHASE 2 MEMORY INTEGRATION MIGRATION ENGINE ---
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN history_summary TEXT DEFAULT '';")
+        except sqlite3.OperationalError:
+            # Column already exists, swallow the error safely
+            pass
+        # --- END PHASE 2 MEMORY INTEGRATION MIGRATION ENGINE ---
+
         # 4. Message Content Layer
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
@@ -84,5 +89,18 @@ def init_db(app=None):
                 FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             )
         """)
+        # 5. Session Environmental Parameter Table (Phase 2)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_parameters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                param_key TEXT NOT NULL,
+                param_value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+                UNIQUE(session_id, param_key)
+            )
+        """)
+
         conn.commit()
     print("💾 Robust database schema layers validated and locked.")
