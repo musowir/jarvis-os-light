@@ -2,6 +2,7 @@
 import requests
 import urllib.parse
 import re
+from core.markdown_cleaner import strip_markdown
 
 def clean_html_tags(raw_html: str) -> str:
     """
@@ -14,6 +15,16 @@ def clean_html_tags(raw_html: str) -> str:
     clean_text = clean_text.replace("&amp;", "&").replace("&quot;", '"').replace("&apos;", "'")
     clean_text = clean_text.replace("&lt;", "<").replace("&gt;", ">").replace("&#x27;", "'")
     return re.sub(r'\s+', ' ', clean_text).strip()
+
+def detect_search_intent(prompt: str) -> bool:
+    """Scans the prompt globally for local context or explicit search terms."""
+    clean = prompt.lower()
+    keywords = ["search", "google", "look up", "check for", "malappuram", "munduparamba", "kerala", "district"]
+    return any(kw in clean for kw in keywords)
+
+def extract_search_query(prompt: str) -> str:
+    """Cleans up the user prompt to pass a high-quality query to the search engine."""
+    return re.sub(r'^(google|search|look up|please search for|check for)\s+', '', prompt, flags=re.IGNORECASE).strip()
 
 def web_search(query: str) -> str:
     """
@@ -63,7 +74,11 @@ def web_search(query: str) -> str:
         if not snippets:
             return "Search query executed, but no descriptive snippet elements could be parsed."
 
-        return "\n".join([f"- {s}" for s in snippets])
+        # Compile the raw text snippets list
+        raw_context = "\n".join([f"- {s}" for s in snippets])
+        
+        # Purge markdown text structures completely to preserve token processing densities
+        return strip_markdown(raw_context)
 
     except Exception as e:
         return f"Network exception encountered during live search execution: {str(e)}"
