@@ -46,7 +46,7 @@ function switchSidebarPanel(panelTarget) {
         chatsTab.classList.add('active');
         hardwareTab.classList.remove('active');
         chatsPanel.classList.remove('hidden-panel');
-        hardwarePanel.classList.add('hidden-panel');
+        hardwarePanel.add('hidden-panel');
         loadSessions();
     } else {
         hardwareTab.classList.add('active');
@@ -211,14 +211,12 @@ function loadHardwareTelemetry() {
                 
                 const fullTimestamp = log.executed_at ? log.executed_at : '0000-00-00 00:00:00';
                 
-                // Assign a clean contextual icon based on the executed feedback text
                 let sysIcon = "⚙️";
                 const feedbackText = log.execution_feedback ? log.execution_feedback.toLowerCase() : '';
                 if (feedbackText.includes("torch") || feedbackText.includes("flashlight")) sysIcon = "🔦";
                 else if (feedbackText.includes("volume") || feedbackText.includes("audio")) sysIcon = "🔊";
                 else if (feedbackText.includes("battery")) sysIcon = "🔋";
 
-                // Rendered with just the action tracking details and the unified timestamp
                 item.innerHTML = `
                     <div class="telemetry-meta">
                         <span>${sysIcon} SYS_EXEC</span>
@@ -230,7 +228,6 @@ function loadHardwareTelemetry() {
             });
         }).catch(() => {});
 }
-
 
 function triggerCustomDeleteModal(id, title) {
     pendingDeleteId = id;
@@ -323,7 +320,7 @@ function appendMessage(role, text) {
 // ==========================================
 // ⚡ ISOLATED, NON-BLOCKING STREAM CONTROLLER
 // ==========================================
-function sendPrompt() {
+async function sendPrompt() {
     if (!userInput) return;
     const text = userInput.value.trim();
     if (!text) return;
@@ -333,52 +330,97 @@ function sendPrompt() {
     
     let assistantDiv = null;
     let telemetryDiv = null;
+    let searchingDiv = null;
     let accumulatedBuffer = "";
 
     const targetSession = currentSessionId ? currentSessionId : 'null';
-    const eventSource = new EventSource('/stream?prompt=' + encodeURIComponent(text) + '&session_id=' + targetSession);
-    
-    eventSource.onmessage = function(event) {
-        if (event.data === "[DONE]") {
-            eventSource.close();
-            loadSessions();
-            if (hardwareTab && hardwareTab.classList.contains('active')) loadHardwareTelemetry();
-        } else {
-            accumulatedBuffer += event.data;
 
-            if (accumulatedBuffer.startsWith("[System Action]:")) {
-                const cleanedHardwareAlert = accumulatedBuffer.replace("[System Action]:", "").trim();
-                
-                if (assistantDiv) { 
-                    assistantDiv.remove(); 
-                    assistantDiv = null; 
+    try {
+        const response = await fetch('/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: text, session_id: targetSession })
+        });
+
+        if (interceptUnauthorized(response.status)) return;
+        if (!response.ok) throw new Error("Connection loop error on system socket");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunkStr = decoder.decode(value);
+            const lines = chunkStr.split('\n');
+
+            for (let line of lines) {
+                if (line.startsWith('id:')) {
+                    currentSessionId = parseInt(line.replace('id:', '').trim());
+                } else if (line.startsWith('data:')) {
+                    const dataContent = line.slice(5);
+                    if (!dataContent) continue;
+
+                    // --- TARGETED HOT REFRESH ON COMPLETE GENERATION ---
+                    if (dataContent.trim() === "[DONE]") {
+                        if (searchingDiv) { searchingDiv.remove(); searchingDiv = null; }
+                        loadSessions();
+                        if (hardwareTab && hardwareTab.classList.contains('active')) loadHardwareTelemetry();
+                        
+                        // Perform an inline layout text update to purge token whitespace fragmentation
+                        if (currentSessionId && assistantDiv) {
+                            fetch(`/history?session_id=${currentSessionId}`)
+                                .then(res => res.json())
+                                .then(messages => {
+                                    if (messages && messages.length > 0) {
+                                        // Target the latest clean assistant block entry directly from DB record
+                                        const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+                                        if (lastAssistantMsg && lastAssistantMsg.content && assistantDiv) {
+                                            assistantDiv.innerText = lastAssistantMsg.content;
+                                        }
+                                    }
+                                })
+                                .catch(() => {});
+                        }
+                        break;
+                    }
+
+                    if (dataContent.trim() === "[SYSTEM_SEARCHING]") {
+                        searchingDiv = appendTelemetryAction("Jarvis is crawling live web data links...");
+                        searchingDiv.classList.add("searching-pulse-animation");
+                        continue;
+                    }
+
+                    if (searchingDiv) {
+                        searchingDiv.remove();
+                        searchingDiv = null;
+                    }
+
+                    accumulatedBuffer += dataContent;
+
+                    if (accumulatedBuffer.startsWith("[System Action]:")) {
+                        const cleanedHardwareAlert = accumulatedBuffer.replace("[System Action]:", "").trim();
+                        if (assistantDiv) { assistantDiv.remove(); assistantDiv = null; }
+                        
+                        if (!telemetryDiv) {
+                            telemetryDiv = appendTelemetryAction(cleanedHardwareAlert);
+                        } else {
+                            const textSpan = telemetryDiv.querySelector('span:last-child');
+                            if (textSpan) textSpan.innerText = cleanedHardwareAlert;
+                        }
+                    } else {
+                        if (!assistantDiv) { 
+                            assistantDiv = appendMessage('assistant', ' '); 
+                        }
+                        if (assistantDiv) assistantDiv.innerText = accumulatedBuffer;
+                    }
+                    if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
                 }
-                
-                if (!telemetryDiv) {
-                    telemetryDiv = appendTelemetryAction(cleanedHardwareAlert);
-                } else {
-                    const textSpan = telemetryDiv.querySelector('span:last-child');
-                    if (textSpan) textSpan.innerText = cleanedHardwareAlert;
-                }
-            } else {
-                if (!assistantDiv) { 
-                    assistantDiv = appendMessage('assistant', ' '); 
-                }
-                if (assistantDiv) assistantDiv.innerText = accumulatedBuffer;
             }
-            
-            if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
         }
-    };
-
-    eventSource.addEventListener('message', function(event) {
-        if (event.lastEventId) {
-            currentSessionId = parseInt(event.lastEventId);
-        }
-    });
-
-    eventSource.onerror = function(err) { 
-        eventSource.close(); 
-        fetch('/sessions').then(res => interceptUnauthorized(res.status)).catch(() => {});
-    };
+    } catch (err) {
+        if (searchingDiv) searchingDiv.remove();
+        appendMessage('assistant', `[Pipeline Error: ${err.message}]`);
+    }
 }

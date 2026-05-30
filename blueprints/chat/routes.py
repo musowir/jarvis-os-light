@@ -3,6 +3,7 @@ import json
 import random
 import re
 import requests
+import datetime
 from flask import Blueprint, Response, request, jsonify, current_app
 from database import get_db_connection
 from blueprints.auth.routes import jwt_required
@@ -83,7 +84,6 @@ def get_telemetry_logs(current_user_id):
     db = get_db_connection()
     cursor = db.cursor()
     
-    # Using datetime(executed_at, 'localtime') to match the phone's system clock
     logs = cursor.execute("""
         SELECT h.action_prompt, h.execution_feedback, 
                datetime(h.executed_at, 'localtime') as executed_at
@@ -118,12 +118,14 @@ def delete_session(current_user_id):
     db.commit()
     return jsonify({"status": "success", "message": "Thread safely truncated"})
 
-@chat_bp.route('/stream', methods=['GET'])
+@chat_bp.route('/stream', methods=['POST'])
 @jwt_required
 def stream(current_user_id):
     """The central message processing pipeline and inference event-stream generator."""
-    prompt = request.args.get('prompt', '').strip()
-    session_id_raw = request.args.get('session_id', 'null')
+    # Transferred payload collection to POST body to secure non-blocking query limits
+    payload_data = request.get_json() or {}
+    prompt = payload_data.get('prompt', '').strip()
+    session_id_raw = payload_data.get('session_id', 'null')
 
     if not prompt:
         return jsonify({"error": "Prompt field blank"}), 400
@@ -153,14 +155,13 @@ def stream(current_user_id):
     
     # --- UPGRADED WEB SEARCH GUARDRAIL DETECTOR ---
     search_triggered = False
-    search_context = ""
+    search_query = ""
     user_is_correcting = any(word in prompt.lower() for word in ["false", "wrong", "mistake", "lying", "not true", "incorrect"])
 
     if not handled:
         if detect_search_intent(prompt):
             search_triggered = True
             search_query = extract_search_query(prompt)
-            search_context = web_search(search_query)
         elif user_is_correcting:
             search_triggered = True
             last_msg = cursor.execute(
@@ -168,20 +169,11 @@ def stream(current_user_id):
                 (allocated_session_id,)
             ).fetchone()
             search_query = last_msg['content'] if last_msg else prompt
-            search_context = f"[USER CORRECTION CRITICAL DATA]: The user flagged the last answer as false. Verify info for: {search_query}.\n" + web_search(search_query)
-
-        if search_triggered:
-            cursor.execute(
-                "UPDATE sessions SET last_search_query = ? WHERE id = ?", 
-                (search_query, allocated_session_id)
-            )
-            db.commit()
-    # -----------------------------------------------
 
     ctx_app = current_app._get_current_object()
 
     def generate():
-        nonlocal handled, message_feedback
+        nonlocal handled, message_feedback, search_triggered, search_query
         
         with ctx_app.app_context():
             db_thread = get_db_connection()
@@ -190,17 +182,32 @@ def stream(current_user_id):
             yield f"id: {allocated_session_id}\n"
             yield f"data: \n\n"
 
+            # NON-BLOCKING ENGINE HANDSHAKE: Instantly fire status token down the pipeline
+            search_context = ""
+            if search_triggered and not handled:
+                yield f"data: [SYSTEM_SEARCHING]\n\n"
+                
+                # Heavy scraping execution runs while UI displays the loader
+                if user_is_correcting:
+                    search_context = f"[USER CORRECTION CRITICAL DATA]: The user flagged the last answer as false. Verify info for: {search_query}.\n" + web_search(search_query)
+                else:
+                    search_context = web_search(search_query)
+                
+                cursor_thread.execute(
+                    "UPDATE sessions SET last_search_query = ? WHERE id = ?", 
+                    (search_query, allocated_session_id)
+                )
+                db_thread.commit()
+
             speak(random.choice(current_app.config['FILLER_PHRASES']))
 
             if handled:
-                # Log hardware tracking details completely independent of chat tables
                 cursor_thread.execute("""
                     INSERT INTO hardware_logs (session_id, action_prompt, execution_feedback) 
                     VALUES (?, ?, ?)
                 """, (allocated_session_id, prompt, message_feedback))
                 db_thread.commit()
                 
-                # Stream out live interface confirmations to the terminal/UI screen
                 yield f"data: [System Action]: {message_feedback}\n\n"
                 yield "data: [DONE]\n\n"
                 speak(message_feedback)
@@ -224,9 +231,11 @@ def stream(current_user_id):
             
             recent_messages = [dict(row) for row in reversed(recent_rows)]
 
+            # TEMPORAL CONTEXT INJECTION (Anchoring System Timeline Reality)
+            current_timestamp = datetime.datetime.now().strftime("%A, %B %d, %Y %I:%M %p")
             system_instruction = current_app.config['SYSTEM_PROMPT']
+            system_instruction += f"\n\n[CURRENT EXECUTABLE SYSTEM ENVIRONMENT TIMESTAMP]: {current_timestamp}"
             
-            # Anti-alignment override injection
             system_instruction += (
                 "\n\nYou have direct access to the latest conversation history below. "
                 "If the user says 'false', 'wrong', or points out a hallucination, you are explicitly authorized "
