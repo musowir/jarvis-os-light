@@ -1,3 +1,5 @@
+// static/js/main.js
+
 // Runtime DOM Node Hooks
 const chatBox = document.getElementById('chatBox');
 const userInput = document.getElementById('userInput');
@@ -46,7 +48,7 @@ function switchSidebarPanel(panelTarget) {
         chatsTab.classList.add('active');
         hardwareTab.classList.remove('active');
         chatsPanel.classList.remove('hidden-panel');
-        hardwarePanel.add('hidden-panel');
+        hardwarePanel.classList.add('hidden-panel');
         loadSessions();
     } else {
         hardwareTab.classList.add('active');
@@ -304,8 +306,11 @@ function appendTelemetryAction(text) {
 
 function appendMessage(role, text) {
     if (!text) return null;
-    if (text.startsWith("[System Action]:")) {
-        return appendTelemetryAction(text.replace("[System Action]:", "").trim());
+    
+    // Process matching structural system tokens on historical database query reloads
+    if (text.startsWith("[System Action]:") || text.startsWith("[SYSTEM_ACTION_EXECUTE]")) {
+        const payload = text.replace("[System Action]:", "").replace("[SYSTEM_ACTION_EXECUTE]", "").trim();
+        return appendTelemetryAction(payload);
     }
 
     if (!chatBox) return null;
@@ -318,7 +323,7 @@ function appendMessage(role, text) {
 }
 
 // ==========================================
-// ⚡ ISOLATED, NON-BLOCKING STREAM CONTROLLER
+// ⚡ ISOLATED, NON-BLOCKING STREAM CONTROLLER (RESTORED COMMIT: dd8845fb)
 // ==========================================
 async function sendPrompt() {
     if (!userInput) return;
@@ -362,22 +367,42 @@ async function sendPrompt() {
                     const dataContent = line.slice(5);
                     if (!dataContent) continue;
 
-                    // --- TARGETED HOT REFRESH ON COMPLETE GENERATION ---
+                    // --- [RESTORED COMMIT: dd8845fb] HOT REFRESH ON COMPLETE GENERATION ---
                     if (dataContent.trim() === "[DONE]") {
                         if (searchingDiv) { searchingDiv.remove(); searchingDiv = null; }
                         loadSessions();
                         if (hardwareTab && hardwareTab.classList.contains('active')) loadHardwareTelemetry();
                         
-                        // Perform an inline layout text update to purge token whitespace fragmentation
-                        if (currentSessionId && assistantDiv) {
+                        // Sync history package cleanly out of database record fields
+                        if (currentSessionId) {
                             fetch(`/history?session_id=${currentSessionId}`)
                                 .then(res => res.json())
                                 .then(messages => {
                                     if (messages && messages.length > 0) {
-                                        // Target the latest clean assistant block entry directly from DB record
-                                        const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
-                                        if (lastAssistantMsg && lastAssistantMsg.content && assistantDiv) {
-                                            assistantDiv.innerText = lastAssistantMsg.content;
+                                        const lastMsg = messages[messages.length - 1];
+                                        if (lastMsg && lastMsg.content) {
+                                            if (lastMsg.content.startsWith("[System Action]:") || lastMsg.content.startsWith("[SYSTEM_ACTION_EXECUTE]")) {
+                                                if (assistantDiv) { assistantDiv.remove(); assistantDiv = null; }
+                                                const cleanContent = lastMsg.content
+                                                    .replace("[System Action]:", "")
+                                                    .replace("[SYSTEM_ACTION_EXECUTE]", "")
+                                                    .trim();
+                                                
+                                                if (!telemetryDiv) {
+                                                    telemetryDiv = appendTelemetryAction(cleanContent);
+                                                } else {
+                                                    const textSpan = telemetryDiv.querySelector('span:last-child');
+                                                    if (textSpan) textSpan.innerText = cleanContent;
+                                                }
+                                            } else if (assistantDiv) {
+                                                // Clean unrendered markdown elements on history database flush
+                                                let sanitizedText = lastMsg.content
+                                                    .replace(/\*\*([\s\S]*?)\*\*/g, '$1')
+                                                    .replace(/^[*\-]\s+/gm, '')
+                                                    .replace(/^\d+\.\s+/gm, '');
+                                                
+                                                assistantDiv.innerText = sanitizedText;
+                                            }
                                         }
                                     }
                                 })
@@ -399,8 +424,13 @@ async function sendPrompt() {
 
                     accumulatedBuffer += dataContent;
 
-                    if (accumulatedBuffer.startsWith("[System Action]:")) {
-                        const cleanedHardwareAlert = accumulatedBuffer.replace("[System Action]:", "").trim();
+                    // Intercept system/hardware metrics in real-time to render badge pills immediately
+                    if (accumulatedBuffer.includes("[SYSTEM_ACTION_EXECUTE]") || accumulatedBuffer.includes("[System Action]:")) {
+                        const cleanedHardwareAlert = accumulatedBuffer
+                            .replace("[SYSTEM_ACTION_EXECUTE]", "")
+                            .replace("[System Action]:", "")
+                            .trim();
+                        
                         if (assistantDiv) { assistantDiv.remove(); assistantDiv = null; }
                         
                         if (!telemetryDiv) {
@@ -410,8 +440,11 @@ async function sendPrompt() {
                             if (textSpan) textSpan.innerText = cleanedHardwareAlert;
                         }
                     } else {
-                        if (!assistantDiv) { 
-                            assistantDiv = appendMessage('assistant', ' '); 
+                        // Standard conversational response processing pipeline
+                        if (!assistantDiv && accumulatedBuffer.trim().length > 0) { 
+                            if (!"[SYSTEM_ACTION_EXECUTE]".startsWith(accumulatedBuffer.trim())) {
+                                assistantDiv = appendMessage('assistant', ' '); 
+                            }
                         }
                         if (assistantDiv) assistantDiv.innerText = accumulatedBuffer;
                     }

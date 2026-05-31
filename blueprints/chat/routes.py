@@ -8,7 +8,8 @@ from flask import Blueprint, Response, request, jsonify, current_app
 from database import get_db_connection
 from blueprints.auth.routes import jwt_required
 from core.search_engine import web_search, detect_search_intent, extract_search_query
-from core.hardware_automation import handle_hardware_intent, speak
+from core.system_actions import handle_system_action
+from core.voice import speak
 from core.markdown_cleaner import strip_markdown
 from core.query_expansion import expand_search_query
 
@@ -113,7 +114,7 @@ def stream(current_user_id):
     )
     db.commit()
 
-    handled, message_feedback = handle_hardware_intent(prompt)
+    handled, message_feedback = handle_system_action(prompt)
     
     search_triggered = False
     search_query = ""
@@ -145,6 +146,7 @@ def stream(current_user_id):
             yield f"id: {allocated_session_id}\n"
             yield f"data: \n\n"
 
+            # 1. CRITICAL: Execute web search synchronously before configuring Ollama payloads
             search_context = ""
             if search_triggered and not handled:
                 yield f"data: [SYSTEM_SEARCHING]\n\n"
@@ -165,13 +167,21 @@ def stream(current_user_id):
             speak(random.choice(current_app.config['FILLER_PHRASES']))
 
             if handled:
+                # Log execution footprint in peripheral telemetry tables
                 cursor_thread.execute("""
                     INSERT INTO hardware_logs (session_id, action_prompt, execution_feedback) 
                     VALUES (?, ?, ?)
                 """, (allocated_session_id, prompt, message_feedback))
+                
+                # Commit the system action metadata to main chat history messages block
+                cursor_thread.execute("""
+                    INSERT INTO messages (session_id, role, content) 
+                    VALUES (?, 'assistant', ?)
+                """, (allocated_session_id, f"[SYSTEM_ACTION_EXECUTE] {message_feedback}"))
+                
                 db_thread.commit()
                 
-                yield f"data: [System Action]: {message_feedback}\n\n"
+                yield f"data: [SYSTEM_ACTION_EXECUTE] {message_feedback}\n\n"
                 yield "data: [DONE]\n\n"
                 speak(message_feedback)
                 return
@@ -184,22 +194,30 @@ def stream(current_user_id):
             recent_messages = [dict(row) for row in reversed(recent_rows)]
 
             current_timestamp = datetime.datetime.now().strftime("%A, %B %d, %Y %I:%M %p")
-            system_instruction = current_app.config['SYSTEM_PROMPT']
-            system_instruction += f"\n\n[CURRENT EXECUTABLE SYSTEM ENVIRONMENT TIMESTAMP]: {current_timestamp}"
             
+            system_instruction = str(current_app.config['SYSTEM_PROMPT'])
+            system_instruction += f"\n\n[CURRENT EXECUTABLE SYSTEM ENVIRONMENT TIMESTAMP]: {current_timestamp}"
             system_instruction += (
                 "\n\nYou have direct access to the latest conversation history below. "
                 "If the user says 'false', 'wrong', or points out a hallucination, you are explicitly authorized "
                 "to completely overturn your previous assumptions based on the live verified search records supplied below."
+                "\n\nCRITICAL DIRECTIVE: Under no circumstances will you use any markdown formatting syntax. "
+                "Do not use asterisks (**), hashtags (#), numbered lists, bullet points (-), or emojis. "
+                "Output raw, clean, flat conversational prose text structures only."
             )
 
             payload = {
-                "model": current_app.config['OLLAMA_MODEL'],
+                "model": current_app.config['MODEL'],
                 "messages": [
                     {"role": "system", "content": system_instruction},
                     *recent_messages
                 ],
-                "stream": True
+                "stream": True,
+                "options": {
+                    "temperature": 0.3,
+                    "num_ctx": 4048,
+                    "num_thread": current_app.config['CPU_THREADS']
+                }
             }
 
             if search_context:
@@ -207,7 +225,7 @@ def stream(current_user_id):
 
             try:
                 ollama_res = requests.post(
-                    f"{current_app.config['OLLAMA_BASE_URL']}/api/chat",
+                    current_app.config['OLLAMA_URL'],
                     json=payload,
                     timeout=45,
                     stream=True
