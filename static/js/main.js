@@ -11,11 +11,14 @@ const hamburgerBtn = document.getElementById('hamburgerBtn');
 const customConfirmModal = document.getElementById('customConfirmModal');
 const modalPromptText = document.getElementById('modalPromptText');
 const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+const modalHeading = document.getElementById('modalHeading');
 
 const chatsPanel = document.getElementById('chatsPanel');
 const hardwarePanel = document.getElementById('hardwarePanel');
+const settingsPanel = document.getElementById('settingsPanel');
 const chatsTab = document.getElementById('chatsTab');
 const hardwareTab = document.getElementById('hardwareTab');
+const settingsTab = document.getElementById('settingsTab');
 
 const authOverlay = document.getElementById('authOverlay');
 const regFieldsContainer = document.getElementById('regFieldsContainer');
@@ -29,6 +32,7 @@ const authErrorMsg = document.getElementById('authErrorMsg');
 let currentSessionId = null;
 let pendingDeleteId = null;
 let isLoginState = true;
+let modalDeleteMode = 'session'; // Modes: 'session' | 'account'
 
 // Window Instantiation Setup Handler
 window.onload = function() { 
@@ -42,20 +46,28 @@ window.onload = function() {
 // 🎛️ SIDEBAR VIEW CONTROLLERS
 // ==========================================
 function switchSidebarPanel(panelTarget) {
-    if (!chatsTab || !hardwareTab || !chatsPanel || !hardwarePanel) return;
+    if (!chatsTab || !hardwareTab || !settingsTab || !chatsPanel || !hardwarePanel || !settingsPanel) return;
     
+    // Reset active visual states across all tabs
+    chatsTab.classList.remove('active');
+    hardwareTab.classList.remove('active');
+    settingsTab.classList.remove('active');
+    chatsPanel.classList.add('hidden-panel');
+    hardwarePanel.classList.add('hidden-panel');
+    settingsPanel.classList.add('hidden-panel');
+
     if (panelTarget === 'chats') {
         chatsTab.classList.add('active');
-        hardwareTab.classList.remove('active');
         chatsPanel.classList.remove('hidden-panel');
-        hardwarePanel.classList.add('hidden-panel');
         loadSessions();
-    } else {
+    } else if (panelTarget === 'hardware') {
         hardwareTab.classList.add('active');
-        chatsTab.classList.remove('active');
         hardwarePanel.classList.remove('hidden-panel');
-        chatsPanel.classList.add('hidden-panel');
         loadHardwareTelemetry();
+    } else if (panelTarget === 'settings') {
+        settingsTab.classList.add('active');
+        settingsPanel.classList.remove('hidden-panel');
+        fetchUserProfileDetails();
     }
 }
 
@@ -151,6 +163,112 @@ function interceptUnauthorized(status) {
 }
 
 // ==========================================
+// 🛠️ PROFILE SETTINGS MANAGEMENT & LOGOUT API
+// ==========================================
+function fetchUserProfileDetails() {
+    const errorNode = document.getElementById('settingsErrorMsg');
+    const successNode = document.getElementById('settingsSuccessMsg');
+    if (errorNode) errorNode.style.display = 'none';
+    if (successNode) successNode.style.display = 'none';
+
+    fetch('/profile')
+        .then(res => {
+            if (interceptUnauthorized(res.status)) return null;
+            if (!res.ok) throw new Error("Failed to pull profile data schema.");
+            return res.json();
+        })
+        .then(user => {
+            if (!user) return;
+            const nameInput = document.getElementById('settingsName');
+            const emailInput = document.getElementById('settingsEmail');
+            if (nameInput) nameInput.value = user.name || '';
+            if (emailInput) emailInput.value = user.email || '';
+        })
+        .catch(err => {
+            if (errorNode) {
+                errorNode.innerText = `[ERROR]: ${err.message}`;
+                errorNode.style.display = 'block';
+            }
+        });
+}
+
+// Adds basic data structures inside user fields
+function updateProfileSettings() {
+    const errorNode = document.getElementById('settingsErrorMsg');
+    const successNode = document.getElementById('settingsSuccessMsg');
+    if (errorNode) errorNode.style.display = 'none';
+    if (successNode) successNode.style.display = 'none';
+
+    const name = document.getElementById('settingsName').value.trim();
+    const email = document.getElementById('settingsEmail').value.trim();
+    const password = document.getElementById('settingsPassword').value;
+
+    if (!name || !email) {
+        if (errorNode) {
+            errorNode.innerText = "[ERROR]: Identity coordinates cannot be unassigned.";
+            errorNode.style.display = 'block';
+        }
+        return;
+    }
+
+    const payload = { name, email };
+    if (password) payload.password = password;
+
+    fetch('/profile/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(async res => {
+        if (interceptUnauthorized(res.status)) return null;
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to finalize profile update adjustments.");
+        return data;
+    })
+    .then(data => {
+        if (!data) return;
+        if (successNode) {
+            successNode.innerText = "[SUCCESS]: Identity matrix parameters modified.";
+            successNode.style.display = 'block';
+        }
+        const passwordInput = document.getElementById('settingsPassword');
+        if (passwordInput) passwordInput.value = '';
+    })
+    .catch(err => {
+        if (errorNode) {
+            errorNode.innerText = `[ERROR]: ${err.message}`;
+            errorNode.style.display = 'block';
+        }
+    });
+}
+
+function executeLogout() {
+    fetch('/logout', { method: 'POST' })
+        .then(() => {
+            if (chatBox) chatBox.innerHTML = '';
+            currentSessionId = null;
+            if (sidebarMenu) sidebarMenu.classList.remove('open');
+            if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+            if (authOverlay) authOverlay.classList.add('active');
+        });
+}
+
+function triggerAccountDeletionModal() {
+    modalDeleteMode = 'account';
+    pendingDeleteId = null;
+    if (modalHeading) modalHeading.innerText = "Purge Account Instance";
+    if (modalPromptText) modalPromptText.innerText = "CRITICAL DATA HAZARD: Are you sure you want to completely erase your user profile instance? This operation cannot be undone.";
+    
+    if (modalConfirmBtn) {
+        modalConfirmBtn.style.background = "#ef4444";
+        modalConfirmBtn.innerText = "Purge Permanently";
+    }
+    
+    if (customConfirmModal) customConfirmModal.classList.add('active');
+    if (modalConfirmBtn) modalConfirmBtn.onclick = executeDeletion;
+}
+
+// ==========================================
 // 💬 LAYOUT RUNTIMES & SESSION API SYNC
 // ==========================================
 function toggleSidebar() {
@@ -232,8 +350,16 @@ function loadHardwareTelemetry() {
 }
 
 function triggerCustomDeleteModal(id, title) {
+    modalDeleteMode = 'session';
     pendingDeleteId = id;
+    if (modalHeading) modalHeading.innerText = "Delete Thread";
     if (modalPromptText) modalPromptText.innerText = "Are you sure you want to permanently delete \"" + title + "\"?";
+    
+    if (modalConfirmBtn) {
+        modalConfirmBtn.style.background = "#ef4444";
+        modalConfirmBtn.innerText = "Delete";
+    }
+
     if (customConfirmModal) customConfirmModal.classList.add('active');
     if (modalConfirmBtn) modalConfirmBtn.onclick = executeDeletion;
 }
@@ -244,6 +370,19 @@ function closeCustomModal() {
 }
 
 function executeDeletion() {
+    if (modalDeleteMode === 'account') {
+        fetch('/profile/delete', { method: 'DELETE' })
+            .then(async res => {
+                if (interceptUnauthorized(res.status)) return;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to purge profile context.");
+                closeCustomModal();
+                executeLogout();
+            })
+            .catch(err => alert(`[CRITICAL ERASURE ERROR]: ${err.message}`));
+        return;
+    }
+
     if (!pendingDeleteId) return;
     fetch('/sessions/delete?session_id=' + pendingDeleteId, { method: 'DELETE' })
         .then(res => {
