@@ -138,7 +138,16 @@ function processAuthSubmission() {
     .then(data => {
         if (isLoginState) {
             if (authOverlay) authOverlay.classList.remove('active');
-            loadSessions();
+            
+            // Force re-reveal of hamburger layout controls natively
+            const hamburger = document.getElementById('hamburgerBtn');
+            if (hamburger) {
+                hamburger.classList.remove('hidden');
+                hamburger.style.display = 'flex';
+            }
+            
+            switchSidebarPanel('chats');
+            loadSessions(true);
             loadHardwareTelemetry();
         } else {
             alert("Account instance mapped safely. Processing entry handshakes.");
@@ -157,6 +166,8 @@ function renderAuthError(msg) {
 function interceptUnauthorized(status) {
     if (status === 401) {
         if (authOverlay) authOverlay.classList.add('active');
+        const hamburger = document.getElementById('hamburgerBtn');
+        if (hamburger) hamburger.classList.add('hidden');
         return true;
     }
     return false;
@@ -192,7 +203,6 @@ function fetchUserProfileDetails() {
         });
 }
 
-// Adds basic data structures inside user fields
 function updateProfileSettings() {
     const errorNode = document.getElementById('settingsErrorMsg');
     const successNode = document.getElementById('settingsSuccessMsg');
@@ -247,6 +257,10 @@ function executeLogout() {
         .then(() => {
             if (chatBox) chatBox.innerHTML = '';
             currentSessionId = null;
+            
+            const hamburger = document.getElementById('hamburgerBtn');
+            if (hamburger) hamburger.classList.add('hidden');
+            
             if (sidebarMenu) sidebarMenu.classList.remove('open');
             if (sidebarOverlay) sidebarOverlay.classList.remove('active');
             if (authOverlay) authOverlay.classList.add('active');
@@ -446,7 +460,6 @@ function appendTelemetryAction(text) {
 function appendMessage(role, text) {
     if (!text) return null;
     
-    // Process matching structural system tokens on historical database query reloads
     if (text.startsWith("[System Action]:") || text.startsWith("[SYSTEM_ACTION_EXECUTE]")) {
         const payload = text.replace("[System Action]:", "").replace("[SYSTEM_ACTION_EXECUTE]", "").trim();
         return appendTelemetryAction(payload);
@@ -462,7 +475,7 @@ function appendMessage(role, text) {
 }
 
 // ==========================================
-// ⚡ ISOLATED, NON-BLOCKING STREAM CONTROLLER (RESTORED COMMIT: dd8845fb)
+// ⚡ ISOLATED, NON-BLOCKING STREAM CONTROLLER
 // ==========================================
 async function sendPrompt() {
     if (!userInput) return;
@@ -506,13 +519,11 @@ async function sendPrompt() {
                     const dataContent = line.slice(5);
                     if (!dataContent) continue;
 
-                    // --- [RESTORED COMMIT: dd8845fb] HOT REFRESH ON COMPLETE GENERATION ---
                     if (dataContent.trim() === "[DONE]") {
                         if (searchingDiv) { searchingDiv.remove(); searchingDiv = null; }
                         loadSessions();
                         if (hardwareTab && hardwareTab.classList.contains('active')) loadHardwareTelemetry();
                         
-                        // Sync history package cleanly out of database record fields
                         if (currentSessionId) {
                             fetch(`/history?session_id=${currentSessionId}`)
                                 .then(res => res.json())
@@ -534,7 +545,6 @@ async function sendPrompt() {
                                                     if (textSpan) textSpan.innerText = cleanContent;
                                                 }
                                             } else if (assistantDiv) {
-                                                // Clean unrendered markdown elements on history database flush
                                                 let sanitizedText = lastMsg.content
                                                     .replace(/\*\*([\s\S]*?)\*\*/g, '$1')
                                                     .replace(/^[*\-]\s+/gm, '')
@@ -563,7 +573,6 @@ async function sendPrompt() {
 
                     accumulatedBuffer += dataContent;
 
-                    // Intercept system/hardware metrics in real-time to render badge pills immediately
                     if (accumulatedBuffer.includes("[SYSTEM_ACTION_EXECUTE]") || accumulatedBuffer.includes("[System Action]:")) {
                         const cleanedHardwareAlert = accumulatedBuffer
                             .replace("[SYSTEM_ACTION_EXECUTE]", "")
@@ -579,7 +588,6 @@ async function sendPrompt() {
                             if (textSpan) textSpan.innerText = cleanedHardwareAlert;
                         }
                     } else {
-                        // Standard conversational response processing pipeline
                         if (!assistantDiv && accumulatedBuffer.trim().length > 0) { 
                             if (!"[SYSTEM_ACTION_EXECUTE]".startsWith(accumulatedBuffer.trim())) {
                                 assistantDiv = appendMessage('assistant', ' '); 
