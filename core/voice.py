@@ -1,4 +1,12 @@
-# core/voice.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.voice
+# DESCRIPTION     : Controls asynchronous text-to-speech hardware pipelines, 
+#                   spawning independent non-blocking worker threads via Termux API.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Audio Telemetry & Voice Synthesis Output Interface
+# ==============================================================================
+
 import subprocess
 import threading
 from flask import current_app

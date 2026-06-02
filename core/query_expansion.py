@@ -1,4 +1,12 @@
-# core/query_expansion.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.query_expansion
+# DESCRIPTION     : Pre-processes brief or conversational user prompts into explicit, 
+#                   search-engine-optimized queries with dynamic temporal resolution.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Text Processing & Search Query Expansion Pipeline
+# ==============================================================================
+
 import re
 import datetime
 

@@ -1,4 +1,12 @@
-# core/search_engine.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.search_engine
+# DESCRIPTION     : Scrapes live network data from DuckDuckGo, evaluates search intent,
+#                   and parses raw text snippets to inject as real-time context vectors.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Live Search & External Knowledge Injection Pipeline
+# ==============================================================================
+
 import requests
 import urllib.parse
 import re
@@ -36,49 +44,4 @@ def web_search(query: str) -> str:
 
     print(f"🌐 Sourcing live network context for query: '{query}'")
     
-    encoded_query = urllib.parse.quote_plus(query)
-    search_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    try:
-        response = requests.get(search_url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return f"Search interface responded with status code: {response.status_code}"
-
-        text = response.text
-        snippets = []
-        start_idx = 0
-        
-        # Pull out up to 4 dense snippets to provide rich contextual anchoring
-        while len(snippets) < 4:
-            start_idx = text.find('class="result__snippet"', start_idx)
-            if start_idx == -1:
-                break
-            
-            open_tag = text.find('>', start_idx)
-            close_tag = text.find('</a>', open_tag)
-            
-            if open_tag != -1 and close_tag != -1:
-                # Capture the full snippet span containing inner markup
-                raw_snippet = text[open_tag + 1:close_tag]
-                clean_snippet = clean_html_tags(raw_snippet)
-                
-                # Filter out search-engine layout junk/boilerplate
-                if clean_snippet and not clean_snippet.startswith("Forward to"):
-                    snippets.append(clean_snippet)
-                    
-            start_idx = close_tag
-
-        if not snippets:
-            return "Search query executed, but no descriptive snippet elements could be parsed."
-
-        # Compile the raw text snippets list
-        raw_context = "\n".join([f"- {s}" for s in snippets])
-        
-        # Purge markdown text structures completely to preserve token processing densities
-        return strip_markdown(raw_context)
-
-    except Exception as e:
-        return f"Network exception encountered during live search execution: {str(e)}"
+    encoded_query = urllib.parse

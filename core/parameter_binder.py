@@ -1,4 +1,12 @@
-# core/parameter_binder.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.parameter_binder
+# DESCRIPTION     : Scans conversational tokens for structural metadata tags and
+#                   manages session-bound parameter states inside storage layers.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Metadata Extraction & Environmental Parameter Pipeline
+# ==============================================================================
+
 import datetime
 import sqlite3
 

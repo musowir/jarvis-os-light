@@ -1,4 +1,11 @@
-# blueprints/auth/routes.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : blueprints.auth.routes
+# DESCRIPTION     : Handles user authentication, registration, profiles, and cascading deletions.
+# COORDINATES     : Layer-3 Backend Logic Blueprint
+# SUBSYSTEM       : Authorization & Database Security Gateway
+# ==============================================================================
+
 import time
 import sqlite3
 import jwt
@@ -166,6 +173,7 @@ def update_profile(current_user_id):
         return jsonify({"error": "The designated email profile coordinate is already bound to another profile record"}), 409
     except Exception as e:
         return jsonify({"error": f"Internal storage runtime collision: {str(e)}"}), 500
+
 
 @auth_bp.route('/profile/delete', methods=['DELETE'])
 @jwt_required

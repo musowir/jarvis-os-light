@@ -1,4 +1,12 @@
-# core/system_actions.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.system_actions
+# DESCRIPTION     : Intercepts and processes native Android device management tasks,
+#                   hardware controls, volume scaling, and telemetry collection via Termux APIs.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Native Hardware Integration & Peripheral Control Gateway
+# ==============================================================================
+
 import subprocess
 import shutil
 

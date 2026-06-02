@@ -1,3 +1,12 @@
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : app
+# DESCRIPTION     : Root initialization file that instantiates the Flask context, Injects
+#                   environment configurations, links database connection teardowns, and registers blueprints.
+# COORDINATES     : Layer-1 Main Application Bootstrap
+# SUBSYSTEM       : Application WSGI Server Entry Point
+# ==============================================================================
+
 #!/usr/bin/env python3
 import os
 from flask import Flask, render_template

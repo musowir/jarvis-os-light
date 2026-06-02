@@ -1,4 +1,12 @@
-# core/markdown_cleaner.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.markdown_cleaner
+# DESCRIPTION     : Strips markdown syntax structural elements, text wrappers, and formatting 
+#                   markers to output flat, conversational prose structures.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Text Processing & Token Optimization Pipeline
+# ==============================================================================
+
 import re
 
 def strip_markdown(text: str) -> str:

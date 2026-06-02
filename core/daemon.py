@@ -1,4 +1,12 @@
-# core/daemon.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.daemon
+# DESCRIPTION     : Manages peripheral background services, Android Termux wake-locks,
+#                   and local Ollama inference daemon lifecycles.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Process Daemon & Environment Infrastructure Layer
+# ==============================================================================
+
 import subprocess
 import signal
 import sys

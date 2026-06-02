@@ -1,4 +1,12 @@
-# config.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : config
+# DESCRIPTION     : Defines base system variables, environment switches, model configuration,
+#                   security secrets, and global operational instructions.
+# COORDINATES     : Layer-1 Main Application Bootstrap
+# SUBSYSTEM       : Global Configuration Matrix Layer
+# ==============================================================================
+
 import os
 
 class BaseConfig:

@@ -1,4 +1,12 @@
-# blueprints/chat/routes.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : blueprints.chat.routes
+# DESCRIPTION     : Manages chat sessions, history tracking, hardware telemetry logs,
+#                   and real-time inference event streaming with web search integration.
+# COORDINATES     : Layer-3 Backend Logic Blueprint
+# SUBSYSTEM       : Chat Engine, Search Pipeline & Event Stream Layer
+# ==============================================================================
+
 import json
 import random
 import re

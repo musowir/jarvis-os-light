@@ -1,4 +1,12 @@
-# core/memory_manager.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : core.memory_manager
+# DESCRIPTION     : Handles context compression and automated background summarization 
+#                   of historical message blocks to optimize token utilization.
+# COORDINATES     : Layer-2 Core Background Engines
+# SUBSYSTEM       : Context Optimization & Short-Term Memory Pipeline
+# ==============================================================================
+
 import requests
 
 def summarize_old_interactions(old_messages: list, ollama_url: str, model_name: str) -> str:

@@ -1,4 +1,12 @@
-# blueprints/settings/routes.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : blueprints.settings.routes
+# DESCRIPTION     : Controls the retrieval and modification of core application settings 
+#                   and configuration states mapped to individual user instances.
+# COORDINATES     : Layer-3 Backend Logic Blueprint
+# SUBSYSTEM       : Application Configurations & User Environment Layer
+# ==============================================================================
+
 from flask import Blueprint, request, jsonify
 from database import get_db_connection
 from blueprints.auth.routes import jwt_required

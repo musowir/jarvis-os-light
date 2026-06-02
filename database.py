@@ -1,4 +1,12 @@
-# database.py
+# ==============================================================================
+# SYSTEM INSTANCE CODE BASE : JARVIS CORE FRAMEWORK
+# MODULE          : database
+# DESCRIPTION     : Establishes context-bound database connection managers and
+#                   validates multi-tenant schema tables, migrations, and cascade rules.
+# COORDINATES     : Layer-1 Main Application Bootstrap
+# SUBSYSTEM       : Relational SQLite Storage Engine
+# ==============================================================================
+
 import sqlite3
 from flask import g, current_app
 
